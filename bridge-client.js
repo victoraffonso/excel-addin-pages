@@ -4,7 +4,7 @@
  */
 import { executeOperation } from './operations.js';
 
-const WS_URL = 'ws://localhost:3100';
+const WS_URL = 'wss://localhost:3100';
 const RECONNECT_DELAY = 2000;
 
 let ws = null;
