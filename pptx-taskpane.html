@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8"/>
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
+  <meta http-equiv="Pragma" content="no-cache"/>
+  <meta http-equiv="Expires" content="0"/>
+  <title>Bankalize PowerPoint Bridge</title>
+  <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
+  <style>
+    body { font-family: -apple-system, sans-serif; padding: 16px; background: #1a1a2e; color: #e0e0e0; font-size: 13px; }
+    .status { padding: 8px 12px; border-radius: 6px; margin: 8px 0; font-weight: 500; }
+    .connected { background: #0a3d0a; border: 1px solid #1a8f1a; }
+    .disconnected { background: #3d0a0a; border: 1px solid #8f1a1a; }
+    .connecting { background: #3d3d0a; border: 1px solid #8f8f1a; }
+    #log { font-family: monospace; font-size: 11px; max-height: 300px; overflow-y: auto; background: #0d0d1a; padding: 8px; border-radius: 4px; margin-top: 12px; }
+    .log-entry { margin: 2px 0; opacity: 0.8; }
+    h2 { margin: 0 0 12px 0; font-size: 15px; color: #ff7eb8; }
+    #stats { color: #888; margin-top: 8px; font-size: 11px; }
+  </style>
+</head>
+<body>
+  <h2>Bankalize PowerPoint Bridge</h2>
+  <div id="status" class="status disconnected">Disconnected</div>
+  <div id="stats">Ops: 0 | Errors: 0</div>
+  <div id="log"></div>
+  <script type="module">
+    import { initBridge } from './pptx-bridge.js';
+    Office.onReady((info) => {
+      if (info.host === Office.HostType.PowerPoint) {
+        initBridge(document.getElementById('status'), document.getElementById('log'), document.getElementById('stats'));
+      }
+    });
+  </script>
+</body>
+</html>
