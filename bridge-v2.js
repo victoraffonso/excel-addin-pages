@@ -142,5 +142,16 @@ export function initBridge(statusElement, logElement, statsElement) {
   setStatus('connecting', 'Connecting...');
   log('Starting HTTP polling...');
   polling = true;
+  enableAutoOpen();
   poll();
+}
+
+// Auto-open: tag the document so the task pane opens automatically next time
+function enableAutoOpen() {
+  try {
+    Office.context.document.settings.set('Office.AutoShowTaskpaneWithDocument', true);
+    Office.context.document.settings.saveAsync();
+  } catch (e) {
+    // Silently fail — not critical
+  }
 }
