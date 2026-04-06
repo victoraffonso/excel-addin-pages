@@ -223,6 +223,14 @@ const OPERATIONS = {
     return `${args.cell} = ${formula.substring(0, 80)}${formula.length > 80 ? '...' : ''}`;
   },
 
+  async write_formulas_range(context, args) {
+    const ws = getSheet(context, args.sheet_name);
+    const rows = args.formulas.length;
+    const cols = args.formulas[0]?.length || 0;
+    ws.getRange(args.start_cell).getResizedRange(rows - 1, cols - 1).formulas = args.formulas;
+    return `Wrote ${rows}x${cols} formulas from ${args.start_cell}`;
+  },
+
   // ─── Format ───
   async format_font(context, args) {
     const ws = getSheet(context, args.sheet_name);
