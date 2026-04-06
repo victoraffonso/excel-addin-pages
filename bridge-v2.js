@@ -17,6 +17,7 @@ let opCount = 0;
 let errCount = 0;
 let polling = false;
 let workbookId = ''; // Identifies this workbook to the bridge
+let addinToken = ''; // Auth token from bridge
 
 function log(msg) {
   if (!logEl) return;
@@ -60,7 +61,19 @@ async function poll() {
   }
 
   try {
-    const resp = await fetch(`${BRIDGE_URL}/poll?workbook=${encodeURIComponent(workbookId)}`, { method: 'GET' });
+    // Get auth token on first poll
+    if (!addinToken) {
+      try {
+        const tokenResp = await fetch(`${BRIDGE_URL}/addin-token`);
+        if (tokenResp.ok) {
+          const data = await tokenResp.json();
+          addinToken = data.token || '';
+          log('Auth token obtained');
+        }
+      } catch {}
+    }
+
+    const resp = await fetch(`${BRIDGE_URL}/poll?workbook=${encodeURIComponent(workbookId)}&token=${addinToken}`, { method: 'GET' });
 
     if (resp.status === 204) {
       setStatus('connected', `Connected — ${workbookId}`);
@@ -147,7 +160,7 @@ async function handleBatch(msg) {
 
 async function sendResult(data) {
   try {
-    await fetch(`${BRIDGE_URL}/result`, {
+    await fetch(`${BRIDGE_URL}/result?token=${addinToken}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
