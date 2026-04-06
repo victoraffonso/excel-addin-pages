@@ -14,6 +14,7 @@ let statsEl = null;
 let opCount = 0;
 let errCount = 0;
 let polling = false;
+let workbookId = ''; // Identifies this workbook to the bridge
 
 function log(msg) {
   if (!logEl) return;
@@ -34,21 +35,39 @@ function updateStats() {
   if (statsEl) statsEl.textContent = `Ops: ${opCount} | Errors: ${errCount}`;
 }
 
+async function resolveWorkbookId() {
+  try {
+    await Excel.run(async (context) => {
+      const wb = context.workbook;
+      wb.load('name');
+      await context.sync();
+      workbookId = wb.name || '';
+      log(`Workbook: ${workbookId}`);
+    });
+  } catch (e) {
+    log(`Failed to get workbook name: ${e.message}`);
+  }
+}
+
 async function poll() {
   if (!polling) return;
 
+  // Resolve workbook ID on first poll
+  if (!workbookId) {
+    await resolveWorkbookId();
+  }
+
   try {
-    const resp = await fetch(`${BRIDGE_URL}/poll`, { method: 'GET' });
+    const resp = await fetch(`${BRIDGE_URL}/poll?workbook=${encodeURIComponent(workbookId)}`, { method: 'GET' });
 
     if (resp.status === 204) {
-      setStatus("connected", "Connected to MCP Bridge");
-      // No pending commands — poll again
+      setStatus('connected', `Connected — ${workbookId}`);
       setTimeout(poll, POLL_INTERVAL);
       return;
     }
 
     if (resp.status === 200) {
-      setStatus('connected', 'Connected to MCP Bridge');
+      setStatus('connected', `Connected — ${workbookId}`);
       const msg = await resp.json();
 
       if (msg.batch) {
@@ -142,16 +161,5 @@ export function initBridge(statusElement, logElement, statsElement) {
   setStatus('connecting', 'Connecting...');
   log('Starting HTTP polling...');
   polling = true;
-  enableAutoOpen();
   poll();
-}
-
-// Auto-open: tag the document so the task pane opens automatically next time
-function enableAutoOpen() {
-  try {
-    Office.context.document.settings.set('Office.AutoShowTaskpaneWithDocument', true);
-    Office.context.document.settings.saveAsync();
-  } catch (e) {
-    // Silently fail — not critical
-  }
 }
