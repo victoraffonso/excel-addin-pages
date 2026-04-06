@@ -1,18 +1,19 @@
 /**
  * Bridge Client — runs inside the Office.js task pane.
- * Connects to the MCP server's WebSocket bridge and executes Excel operations.
+ * Polls the MCP server's HTTPS bridge for pending commands and executes them via Excel.run().
+ * Uses HTTP polling instead of WebSocket (WebSocket blocked by Excel's WebView sandbox).
  */
 import { executeOperation } from './operations.js';
 
-const WS_URL = 'wss://localhost:3100';
-const RECONNECT_DELAY = 2000;
+const BRIDGE_URL = 'https://localhost:3100';
+const POLL_INTERVAL = 150; // ms between polls
 
-let ws = null;
 let statusEl = null;
 let logEl = null;
 let statsEl = null;
 let opCount = 0;
 let errCount = 0;
+let polling = false;
 
 function log(msg) {
   if (!logEl) return;
@@ -20,7 +21,6 @@ function log(msg) {
   entry.className = 'log-entry';
   entry.textContent = `${new Date().toLocaleTimeString()} ${msg}`;
   logEl.prepend(entry);
-  // Keep max 100 entries
   while (logEl.children.length > 100) logEl.removeChild(logEl.lastChild);
 }
 
@@ -34,46 +34,34 @@ function updateStats() {
   if (statsEl) statsEl.textContent = `Ops: ${opCount} | Errors: ${errCount}`;
 }
 
-function connect() {
-  setStatus('connecting', 'Connecting...');
-  log('Connecting to bridge...');
+async function poll() {
+  if (!polling) return;
 
-  ws = new WebSocket(WS_URL);
+  try {
+    const resp = await fetch(`${BRIDGE_URL}/poll`, { method: 'GET' });
 
-  ws.onopen = () => {
-    setStatus('connected', 'Connected to MCP Bridge');
-    log('Connected');
-  };
-
-  ws.onclose = () => {
-    setStatus('disconnected', 'Disconnected — reconnecting...');
-    log('Disconnected');
-    ws = null;
-    setTimeout(connect, RECONNECT_DELAY);
-  };
-
-  ws.onerror = (err) => {
-    log(`WebSocket error: ${err.type}`);
-    // onclose will handle reconnection
-  };
-
-  ws.onmessage = async (event) => {
-    let msg;
-    try {
-      msg = JSON.parse(event.data);
-    } catch (e) {
-      log(`Bad message: ${e}`);
+    if (resp.status === 204) {
+      // No pending commands — poll again
+      setTimeout(poll, POLL_INTERVAL);
       return;
     }
 
-    if (msg.batch) {
-      // Batch execution — multiple operations in single Excel.run
-      await handleBatch(msg);
-    } else {
-      // Single operation
-      await handleSingle(msg);
+    if (resp.status === 200) {
+      setStatus('connected', 'Connected to MCP Bridge');
+      const msg = await resp.json();
+
+      if (msg.batch) {
+        await handleBatch(msg);
+      } else {
+        await handleSingle(msg);
+      }
     }
-  };
+  } catch (e) {
+    setStatus('disconnected', 'Disconnected — retrying...');
+    // Server not reachable — retry after delay
+  }
+
+  setTimeout(poll, POLL_INTERVAL);
 }
 
 async function handleSingle(msg) {
@@ -92,14 +80,14 @@ async function handleSingle(msg) {
     log(`${tool} → ${ms}ms`);
     updateStats();
 
-    ws?.send(JSON.stringify({ id, ok: true, result }));
+    await sendResult({ id, ok: true, result });
   } catch (error) {
     errCount++;
     const ms = (performance.now() - start).toFixed(0);
     log(`${tool} ERROR (${ms}ms): ${error.message}`);
     updateStats();
 
-    ws?.send(JSON.stringify({ id, ok: false, error: error.message }));
+    await sendResult({ id, ok: false, error: error.message });
   }
 }
 
@@ -113,7 +101,7 @@ async function handleBatch(msg) {
       for (const op of operations) {
         res.push(await executeOperation(context, op.tool, op.args));
       }
-      await context.sync(); // Single sync for all operations
+      await context.sync();
       return res;
     });
 
@@ -122,14 +110,26 @@ async function handleBatch(msg) {
     log(`batch(${operations.length} ops) → ${ms}ms`);
     updateStats();
 
-    ws?.send(JSON.stringify({ id, ok: true, result: results }));
+    await sendResult({ id, ok: true, result: results });
   } catch (error) {
     errCount++;
     const ms = (performance.now() - start).toFixed(0);
     log(`batch ERROR (${ms}ms): ${error.message}`);
     updateStats();
 
-    ws?.send(JSON.stringify({ id, ok: false, error: error.message }));
+    await sendResult({ id, ok: false, error: error.message });
+  }
+}
+
+async function sendResult(data) {
+  try {
+    await fetch(`${BRIDGE_URL}/result`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+  } catch (e) {
+    log(`Failed to send result: ${e.message}`);
   }
 }
 
@@ -137,5 +137,9 @@ export function initBridge(statusElement, logElement, statsElement) {
   statusEl = statusElement;
   logEl = logElement;
   statsEl = statsElement;
-  connect();
+
+  setStatus('connecting', 'Connecting...');
+  log('Starting HTTP polling...');
+  polling = true;
+  poll();
 }
