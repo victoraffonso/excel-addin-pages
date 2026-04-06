@@ -41,6 +41,7 @@ async function poll() {
     const resp = await fetch(`${BRIDGE_URL}/poll`, { method: 'GET' });
 
     if (resp.status === 204) {
+      setStatus("connected", "Connected to MCP Bridge");
       // No pending commands — poll again
       setTimeout(poll, POLL_INTERVAL);
       return;
