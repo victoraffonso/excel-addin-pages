@@ -6,12 +6,31 @@
 
 /**
  * Main dispatcher — routes tool name to the correct operation function.
+ * Validates the active workbook matches the requested file_path.
  */
 export async function executeOperation(context, tool, args) {
   const handler = OPERATIONS[tool];
   if (!handler) {
     throw new Error(`Unknown operation: ${tool}`);
   }
+
+  // Validate workbook if file_path provided
+  if (args.file_path && args.sheet_name) {
+    try {
+      const sheets = context.workbook.worksheets;
+      sheets.load('items/name');
+      await context.sync();
+      const names = sheets.items.map(s => s.name);
+      if (!names.includes(args.sheet_name)) {
+        const wbName = context.workbook.name || 'unknown';
+        throw new Error(`Sheet "${args.sheet_name}" not found in active workbook. Active workbook has sheets: [${names.join(', ')}]. Make sure "${args.file_path}" is the active workbook in Excel.`);
+      }
+    } catch (e) {
+      if (e.message.includes('not found in active workbook')) throw e;
+      // If validation itself fails, continue and let the operation handle it
+    }
+  }
+
   return await handler(context, args);
 }
 
