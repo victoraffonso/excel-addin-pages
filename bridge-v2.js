@@ -6,7 +6,9 @@
 import { executeOperation } from './ops-v2.js';
 
 const BRIDGE_URL = 'https://localhost:3100';
-const POLL_INTERVAL = 150; // ms between polls
+const IDLE_POLL = 500;   // ms when no pending commands
+const ACTIVE_POLL = 100; // ms when commands are being processed
+let currentPollInterval = IDLE_POLL;
 
 let statusEl = null;
 let logEl = null;
@@ -62,12 +64,14 @@ async function poll() {
 
     if (resp.status === 204) {
       setStatus('connected', `Connected — ${workbookId}`);
-      setTimeout(poll, POLL_INTERVAL);
+      currentPollInterval = IDLE_POLL;
+      setTimeout(poll, currentPollInterval);
       return;
     }
 
     if (resp.status === 200) {
       setStatus('connected', `Connected — ${workbookId}`);
+      currentPollInterval = ACTIVE_POLL; // Speed up polling when processing commands
       const msg = await resp.json();
 
       if (msg.batch) {
@@ -81,7 +85,7 @@ async function poll() {
     // Server not reachable — retry after delay
   }
 
-  setTimeout(poll, POLL_INTERVAL);
+  setTimeout(poll, currentPollInterval);
 }
 
 async function handleSingle(msg) {

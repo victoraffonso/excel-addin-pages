@@ -14,20 +14,33 @@ export async function executeOperation(context, tool, args) {
     throw new Error(`Unknown operation: ${tool}`);
   }
 
-  // Validate workbook if file_path provided
-  if (args.file_path && args.sheet_name) {
+  // Validate workbook and sheet if provided
+  if (args.file_path || args.sheet_name) {
     try {
-      const sheets = context.workbook.worksheets;
+      const wb = context.workbook;
+      wb.load('name');
+      const sheets = wb.worksheets;
       sheets.load('items/name');
       await context.sync();
-      const names = sheets.items.map(s => s.name);
-      if (!names.includes(args.sheet_name)) {
-        const wbName = context.workbook.name || 'unknown';
-        throw new Error(`Sheet "${args.sheet_name}" not found in active workbook. Active workbook has sheets: [${names.join(', ')}]. Make sure "${args.file_path}" is the active workbook in Excel.`);
+
+      // Verify file_path matches active workbook
+      if (args.file_path) {
+        const expectedName = args.file_path.split('/').pop().replace(/\.[^.]+$/, '');
+        const actualName = (wb.name || '').replace(/\.[^.]+$/, '');
+        if (expectedName && actualName && !actualName.includes(expectedName) && !expectedName.includes(actualName)) {
+          throw new Error(`Active workbook "${wb.name}" does not match expected "${args.file_path}". Open the correct file in Excel.`);
+        }
+      }
+
+      // Verify sheet exists
+      if (args.sheet_name) {
+        const names = sheets.items.map(s => s.name);
+        if (!names.includes(args.sheet_name)) {
+          throw new Error(`Sheet "${args.sheet_name}" not found. Active workbook "${wb.name}" has sheets: [${names.join(', ')}].`);
+        }
       }
     } catch (e) {
-      if (e.message.includes('not found in active workbook')) throw e;
-      // If validation itself fails, continue and let the operation handle it
+      if (e.message.includes('not found') || e.message.includes('does not match')) throw e;
     }
   }
 
