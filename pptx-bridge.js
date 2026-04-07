@@ -73,7 +73,7 @@ async function poll() {
       } catch {}
     }
 
-    const resp = await fetch(`${BRIDGE_URL}/poll?workbook=${encodeURIComponent(presentationId)}&token=${addinToken}`, { method: 'GET' });
+    const resp = await fetch(`${BRIDGE_URL}/poll?workbook=${encodeURIComponent(presentationId)}&token=${addinToken}&app=powerpoint`, { method: 'GET' });
 
     if (resp.status === 204) {
       setStatus('connected', `Connected — ${presentationId}`);
