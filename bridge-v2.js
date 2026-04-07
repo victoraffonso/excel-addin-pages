@@ -75,6 +75,14 @@ async function poll() {
 
     const resp = await fetch(`${BRIDGE_URL}/poll?workbook=${encodeURIComponent(workbookId)}&token=${addinToken}&app=excel`, { method: 'GET' });
 
+    // Token expired (bridge restarted) — clear and re-fetch next cycle
+    if (resp.status === 401) {
+      addinToken = '';
+      log('Token expired — refreshing...');
+      setTimeout(poll, currentPollInterval);
+      return;
+    }
+
     if (resp.status === 204) {
       setStatus('connected', `Connected — ${workbookId}`);
       currentPollInterval = IDLE_POLL;
@@ -160,11 +168,15 @@ async function handleBatch(msg) {
 
 async function sendResult(data) {
   try {
-    await fetch(`${BRIDGE_URL}/result?token=${addinToken}`, {
+    const resp = await fetch(`${BRIDGE_URL}/result?token=${addinToken}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
     });
+    if (resp.status === 401) {
+      addinToken = '';
+      log('Token expired on result POST — refreshing...');
+    }
   } catch (e) {
     log(`Failed to send result: ${e.message}`);
   }

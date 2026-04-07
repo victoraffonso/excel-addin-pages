@@ -389,6 +389,371 @@ const OPERATIONS = {
     });
   },
 
+  // ─── Shape Operations ───
+  async delete_shape(context, args) {
+    const { slide_index, shape_index } = args;
+    const slides = context.presentation.slides;
+    slides.load('items');
+    await context.sync();
+
+    if (slide_index < 0 || slide_index >= slides.items.length) {
+      throw new Error(`Slide index ${slide_index} out of range (0-${slides.items.length - 1})`);
+    }
+
+    const slide = slides.items[slide_index];
+    slide.shapes.load('items');
+    await context.sync();
+
+    // shape_index is 1-based per convention
+    const shapeIdx = shape_index - 1;
+    if (shapeIdx < 0 || shapeIdx >= slide.shapes.items.length) {
+      throw new Error(`Shape index ${shape_index} out of range (1-${slide.shapes.items.length})`);
+    }
+
+    const shape = slide.shapes.items[shapeIdx];
+    shape.delete();
+    await context.sync();
+
+    return `Deleted shape ${shape_index} from slide ${slide_index}`;
+  },
+
+  async add_shape(context, args) {
+    const { slide_index, shape_type = 'rectangle', left = 2.0, top = 2.0, width = 3.0, height = 2.0, text = '' } = args;
+    const slides = context.presentation.slides;
+    slides.load('items');
+    await context.sync();
+
+    if (slide_index < 0 || slide_index >= slides.items.length) {
+      throw new Error(`Slide index ${slide_index} out of range (0-${slides.items.length - 1})`);
+    }
+
+    // Map friendly names to PowerPoint GeometricShapeType enum values
+    const shapeTypeMap = {
+      'rectangle': 'Rectangle',
+      'oval': 'Ellipse',
+      'ellipse': 'Ellipse',
+      'triangle': 'Triangle',
+      'diamond': 'Diamond',
+      'roundedrectangle': 'RoundedRectangle',
+      'rounded_rectangle': 'RoundedRectangle',
+      'roundedRect': 'RoundedRectangle',
+    };
+
+    const mappedType = shapeTypeMap[shape_type.toLowerCase()] || shape_type;
+
+    const slide = slides.items[slide_index];
+    const options = {
+      left: inchesToPoints(left),
+      top: inchesToPoints(top),
+      width: inchesToPoints(width),
+      height: inchesToPoints(height),
+    };
+
+    const newShape = slide.shapes.addGeometricShape(mappedType, options);
+    newShape.load('name');
+    await context.sync();
+
+    // Set text if provided
+    if (text) {
+      try {
+        newShape.textFrame.textRange.text = text;
+        await context.sync();
+      } catch {
+        // Some geometric shapes may not support text frames
+      }
+    }
+
+    return `Added ${shape_type} shape on slide ${slide_index} (name: ${newShape.name})`;
+  },
+
+  async list_shapes(context, args) {
+    const slideIndex = args.slide_index;
+    const slides = context.presentation.slides;
+    slides.load('items');
+    await context.sync();
+
+    if (slideIndex < 0 || slideIndex >= slides.items.length) {
+      throw new Error(`Slide index ${slideIndex} out of range (0-${slides.items.length - 1})`);
+    }
+
+    const slide = slides.items[slideIndex];
+    slide.shapes.load('items');
+    await context.sync();
+
+    const shapes = [];
+    for (let i = 0; i < slide.shapes.items.length; i++) {
+      const shape = slide.shapes.items[i];
+      shape.load('id,name,type,left,top,width,height');
+      await context.sync();
+
+      let text = '';
+      let hasText = false;
+      try {
+        shape.textFrame.load('hasText');
+        await context.sync();
+        hasText = shape.textFrame.hasText;
+        if (hasText) {
+          shape.textFrame.textRange.load('text');
+          await context.sync();
+          const fullText = shape.textFrame.textRange.text || '';
+          // Include full text up to 200 chars
+          text = fullText.length > 200 ? fullText.substring(0, 200) + '...' : fullText;
+        }
+      } catch {
+        // Shape without text frame
+      }
+
+      shapes.push({
+        index: i + 1, // 1-based
+        id: shape.id,
+        name: shape.name,
+        type: shape.type,
+        left_inches: Math.round((shape.left / 72) * 100) / 100,
+        top_inches: Math.round((shape.top / 72) * 100) / 100,
+        width_inches: Math.round((shape.width / 72) * 100) / 100,
+        height_inches: Math.round((shape.height / 72) * 100) / 100,
+        has_text: hasText,
+        text_preview: text,
+      });
+    }
+
+    return {
+      slide_index: slideIndex,
+      shape_count: slide.shapes.items.length,
+      shapes,
+    };
+  },
+
+  async set_shape_position(context, args) {
+    const { slide_index, shape_index, left, top, width, height } = args;
+    const slides = context.presentation.slides;
+    slides.load('items');
+    await context.sync();
+
+    if (slide_index < 0 || slide_index >= slides.items.length) {
+      throw new Error(`Slide index ${slide_index} out of range (0-${slides.items.length - 1})`);
+    }
+
+    const slide = slides.items[slide_index];
+    slide.shapes.load('items');
+    await context.sync();
+
+    const shapeIdx = shape_index - 1;
+    if (shapeIdx < 0 || shapeIdx >= slide.shapes.items.length) {
+      throw new Error(`Shape index ${shape_index} out of range (1-${slide.shapes.items.length})`);
+    }
+
+    const shape = slide.shapes.items[shapeIdx];
+    if (left != null) shape.left = inchesToPoints(left);
+    if (top != null) shape.top = inchesToPoints(top);
+    if (width != null) shape.width = inchesToPoints(width);
+    if (height != null) shape.height = inchesToPoints(height);
+    await context.sync();
+
+    return `Repositioned shape ${shape_index} on slide ${slide_index}`;
+  },
+
+  async format_shape(context, args) {
+    const { slide_index, shape_index, fill_color, line_color, line_width } = args;
+    const slides = context.presentation.slides;
+    slides.load('items');
+    await context.sync();
+
+    if (slide_index < 0 || slide_index >= slides.items.length) {
+      throw new Error(`Slide index ${slide_index} out of range (0-${slides.items.length - 1})`);
+    }
+
+    const slide = slides.items[slide_index];
+    slide.shapes.load('items');
+    await context.sync();
+
+    const shapeIdx = shape_index - 1;
+    if (shapeIdx < 0 || shapeIdx >= slide.shapes.items.length) {
+      throw new Error(`Shape index ${shape_index} out of range (1-${slide.shapes.items.length})`);
+    }
+
+    const shape = slide.shapes.items[shapeIdx];
+    const changes = [];
+
+    if (fill_color != null) {
+      shape.fill.setSolidColor('#' + fill_color.replace('#', ''));
+      changes.push('fill');
+    }
+    if (line_color != null) {
+      shape.lineFormat.color = '#' + line_color.replace('#', '');
+      changes.push('line color');
+    }
+    if (line_width != null) {
+      shape.lineFormat.weight = line_width;
+      changes.push('line width');
+    }
+
+    await context.sync();
+    return `Formatted shape ${shape_index} on slide ${slide_index} (${changes.join(', ')})`;
+  },
+
+  // ─── Slide Reorder ───
+  async move_slide(context, args) {
+    const { from_index, to_index } = args;
+    const slides = context.presentation.slides;
+    slides.load('items');
+    await context.sync();
+
+    if (from_index < 0 || from_index >= slides.items.length) {
+      throw new Error(`From index ${from_index} out of range (0-${slides.items.length - 1})`);
+    }
+    if (to_index < 0 || to_index >= slides.items.length) {
+      throw new Error(`To index ${to_index} out of range (0-${slides.items.length - 1})`);
+    }
+
+    const slide = slides.items[from_index];
+    // moveTo is 1-based position in PowerPointApi 1.5+
+    try {
+      slide.moveTo(to_index + 1);
+      await context.sync();
+    } catch (e) {
+      throw new Error(`Slide moveTo failed — requires PowerPointApi 1.5+. Error: ${e.message}`);
+    }
+
+    return `Moved slide from position ${from_index} to ${to_index}`;
+  },
+
+  // ─── Search & Replace ───
+  async search_replace_text(context, args) {
+    const { search, replace } = args;
+    if (!search) throw new Error('search parameter is required');
+
+    const slides = context.presentation.slides;
+    slides.load('items');
+    await context.sync();
+
+    let totalReplacements = 0;
+    const slidesAffected = [];
+
+    for (let i = 0; i < slides.items.length; i++) {
+      const slide = slides.items[i];
+      slide.shapes.load('items');
+      await context.sync();
+
+      let slideHits = 0;
+      for (let s = 0; s < slide.shapes.items.length; s++) {
+        const shape = slide.shapes.items[s];
+        try {
+          shape.textFrame.load('hasText');
+          await context.sync();
+          if (!shape.textFrame.hasText) continue;
+
+          shape.textFrame.textRange.load('text');
+          await context.sync();
+
+          const originalText = shape.textFrame.textRange.text || '';
+          if (originalText.includes(search)) {
+            const newText = originalText.split(search).join(replace || '');
+            shape.textFrame.textRange.text = newText;
+            const hits = (originalText.split(search).length - 1);
+            slideHits += hits;
+            totalReplacements += hits;
+          }
+        } catch {
+          // Shape without text frame — skip
+        }
+      }
+
+      if (slideHits > 0) {
+        slidesAffected.push({ slide_index: i, replacements: slideHits });
+      }
+    }
+
+    await context.sync();
+    return {
+      search,
+      replace: replace || '',
+      total_replacements: totalReplacements,
+      slides_affected: slidesAffected,
+    };
+  },
+
+  // ─── Text Alignment ───
+  async set_text_alignment(context, args) {
+    const { slide_index, shape_index, alignment = 'left' } = args;
+    const slides = context.presentation.slides;
+    slides.load('items');
+    await context.sync();
+
+    if (slide_index < 0 || slide_index >= slides.items.length) {
+      throw new Error(`Slide index ${slide_index} out of range (0-${slides.items.length - 1})`);
+    }
+
+    const slide = slides.items[slide_index];
+    slide.shapes.load('items');
+    await context.sync();
+
+    const shapeIdx = shape_index - 1;
+    if (shapeIdx < 0 || shapeIdx >= slide.shapes.items.length) {
+      throw new Error(`Shape index ${shape_index} out of range (1-${slide.shapes.items.length})`);
+    }
+
+    const alignmentMap = {
+      'left': 'Left',
+      'center': 'Center',
+      'right': 'Right',
+      'justify': 'Justify',
+    };
+
+    const mappedAlignment = alignmentMap[alignment.toLowerCase()];
+    if (!mappedAlignment) {
+      throw new Error(`Invalid alignment '${alignment}'. Valid: left, center, right, justify`);
+    }
+
+    const shape = slide.shapes.items[shapeIdx];
+    shape.textFrame.textRange.paragraphFormat.horizontalAlignment = mappedAlignment;
+    await context.sync();
+
+    return `Set alignment to ${alignment} on shape ${shape_index}, slide ${slide_index}`;
+  },
+
+  // ─── Hyperlinks ───
+  async add_hyperlink(context, args) {
+    const { slide_index, shape_index, url, display_text } = args;
+    if (!url) throw new Error('url parameter is required');
+
+    const slides = context.presentation.slides;
+    slides.load('items');
+    await context.sync();
+
+    if (slide_index < 0 || slide_index >= slides.items.length) {
+      throw new Error(`Slide index ${slide_index} out of range (0-${slides.items.length - 1})`);
+    }
+
+    const slide = slides.items[slide_index];
+    slide.shapes.load('items');
+    await context.sync();
+
+    const shapeIdx = shape_index - 1;
+    if (shapeIdx < 0 || shapeIdx >= slide.shapes.items.length) {
+      throw new Error(`Shape index ${shape_index} out of range (1-${slide.shapes.items.length})`);
+    }
+
+    const shape = slide.shapes.items[shapeIdx];
+
+    // Set display text if provided
+    if (display_text) {
+      shape.textFrame.textRange.text = display_text;
+    }
+
+    shape.textFrame.textRange.hyperlink.address = url;
+    await context.sync();
+
+    return `Hyperlink set on shape ${shape_index}, slide ${slide_index}: ${url}`;
+  },
+
+  // ─── Table Cell Formatting ───
+  async format_table_cell(context, args) {
+    // Table cell formatting requires PowerPointApi 1.8+ which is not widely available.
+    // The table object model in Office.js is limited for PowerPoint.
+    throw new Error('Table cell formatting is not yet supported via Office.js add-in (requires PowerPointApi 1.8+). Use the python-pptx MCP for table formatting or apply formatting to the whole shape via format_text.');
+  },
+
   // ─── Presentation Creation ───
   async create_presentation(context, args) {
     throw new Error('Presentation creation is not supported via Office.js add-in (requires file system access). Use the python-pptx MCP for this operation: mcp__powerpoint__create_presentation');
