@@ -537,4 +537,8 @@ const OPERATIONS = {
     ws.showGridlines = args.show !== false;
     return `Gridlines ${args.show ? 'shown' : 'hidden'}`;
   },
+
+  async create_workbook(context, args) {
+    throw new Error('create_workbook is not supported via the add-in. The workbook must be created and opened in Excel first.');
+  },
 };
